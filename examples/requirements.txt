@@ -1,5 +1,6 @@
 duckdb>=1.4.0
 pandas>=2.3.0
+pyarrow>=21.0.0
 python-dotenv>=1.1.0
 openai>=2.3.0
 pyyaml>=6.0.0

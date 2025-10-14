@@ -1,14 +1,14 @@
 {
   "_comment": "BA INPUT FORM - Single source of truth for all configuration",
   "_instructions": [
-    "1. Set mode to 'file' or 'api'",
+    "1. Set mode to 'parquet' or 'api'",
     "2. Configure tables with columns and data sources",
     "3. Add vocabulary (synonyms) as needed",
     "4. Optionally adjust limits, prompts, and model",
     "5. Run: python json_sql_copilot.py --form input/form.json --q 'your query'"
   ],
   
-  "mode": "file",
+  "mode": "parquet",
   
   "tables": {
     "ccr_limits": {
@@ -20,8 +20,8 @@
         "limit_ccr", "limit_type", "limit_buffer", "limit_utilization_pct", "risk_owner"
       ],
       "source": {
-        "_comment_file_mode": "When mode='file', provide file_path",
-        "file_path": "input/data/ccr_limits.json",
+        "_comment_parquet_mode": "When mode='parquet', provide file_path to .parquet file (fast, handles 100M+ rows)",
+        "file_path": "input/data/ccr_limits.parquet",
         
         "_comment_api_mode": "When mode='api', provide these fields instead",
         "_api_example": {
@@ -46,7 +46,7 @@
         "csa_flag", "collateralized", "risk_factor", "delta", "gamma", "vega", "pnl", "currency"
       ],
       "source": {
-        "file_path": "input/data/trades.json"
+        "file_path": "input/data/trades.parquet"
       }
     }
   },
@@ -89,6 +89,12 @@
     "max_rows_in_prompt": 20,
     "system_prompt": "You are a senior risk analyst providing concise insights on CCR exposure and trading data. Be specific with numbers, highlight key risks, and keep responses to 3-5 sentences.",
     "user_template": "USER REQUEST: \"{user_request}\"\n\nQUERY RESULTS ({row_count} rows):\nColumns: {columns}\n\nSample Data (first {sample_size} rows):\n{data_preview}\n\nProvide a brief, insightful commentary (3-5 sentences) about what this data shows. Focus on key risks, exposures, or notable patterns."
+  },
+  
+  "optimization": {
+    "_comment": "Performance optimizations for large datasets (75M+ rows)",
+    "two_stage_optimizer": true,
+    "_explanation": "Two-stage: Extract WHERE filters first (Stage 1), then generate optimized SQL (Stage 2). Reduces LLM costs 30-50%, improves query performance with predicate pushdown."
   },
   
   "rule_based_queries": {

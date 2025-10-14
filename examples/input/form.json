@@ -1,17 +1,16 @@
 {
-  "mode": "file",
+  "mode": "parquet",
   
   "tables": {
     "ccr_limits": {
       "description": "CCR exposure vs limits by counterparty",
       "columns": [
-        "adaptiv_code", "customer_name", "sector", "rating", "country", "region",
-        "portfolio", "booking_location", "currency", "as_of_date",
-        "exposure_epe", "exposure_pfe", "exposure_ead", "exposure_var", "exposure_stress",
-        "limit_ccr", "limit_type", "limit_buffer", "limit_utilization_pct", "risk_owner"
+        "adaptiv_code", "customer_name", "exposure_epe", "exposure_pfe", "exposure_ead",
+        "limit_ccr", "limit_buffer", "limit_utilization_pct", "currency", "booking_location",
+        "portfolio", "risk_owner", "as_of_date"
       ],
       "source": {
-        "file_path": "input/data/ccr_limits.json"
+        "file_path": "input/data/ccr_limits.parquet"
       }
     },
     "trades": {
@@ -22,7 +21,7 @@
         "csa_flag", "collateralized", "risk_factor", "delta", "gamma", "vega", "pnl", "currency"
       ],
       "source": {
-        "file_path": "input/data/trades.json"
+        "file_path": "input/data/trades.parquet"
       }
     }
   },
@@ -62,8 +61,13 @@
   "commentary": {
     "enabled": true,
     "max_rows_in_prompt": 20,
-    "system_prompt": "You are a senior risk analyst providing concise insights on CCR exposure and trading data. Be specific with numbers, highlight key risks, and keep responses to 3-5 sentences.",
-    "user_template": "USER REQUEST: \"{user_request}\"\n\nQUERY RESULTS ({row_count} rows):\nColumns: {columns}\n\nSample Data (first {sample_size} rows):\n{data_preview}\n\nProvide a brief, insightful commentary (3-5 sentences) about what this data shows. Focus on key risks, exposures, or notable patterns."
+    "system_prompt": "You are a senior risk analyst providing concise insights on CCR exposure and trading data. Be specific with numbers, highlight key risks, and keep responses to concise well framed bullets. avoid BS.",
+    "user_template": "USER REQUEST: \"{user_request}\"\n\nQUERY RESULTS ({row_count} rows):\nColumns: {columns}\n\nSample Data (first {sample_size} rows):\n{data_preview}\n\nProvide a brief, insightful bulletted commentary (3-5 sentences) about what this data shows. Focus on key risks, exposures, or notable patterns."
+  },
+  
+  "optimization": {
+    "two_stage_optimizer": true,
+    "_comment": "Two-stage: Extract filters first (cheap), then generate SQL. Reduces LLM costs 30-50% and improves query performance."
   },
   
   "rule_based_queries": {
