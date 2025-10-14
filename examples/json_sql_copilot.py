@@ -474,8 +474,41 @@ def run_query(form: Dict[str, Any], user_request: str, use_llm: bool = False, wi
         register_tables(con, form)
         
         exec_t0 = time.time()
-        res_df: pd.DataFrame = con.execute(sql_final).fetch_df()
-        exec_ms = int((time.time() - exec_t0) * 1000)
+        try:
+            res_df: pd.DataFrame = con.execute(sql_final).fetch_df()
+            exec_ms = int((time.time() - exec_t0) * 1000)
+        except duckdb.BinderException as e:
+            error_msg = str(e)
+            
+            # Provide user-friendly hints for common errors
+            if "as_of_date" in error_msg and ("TIMESTAMP" in error_msg or "DATE" in error_msg):
+                raise RuntimeError(
+                    f"❌ Date type mismatch error.\n"
+                    f"Hint: as_of_date is stored as VARCHAR. Use CAST(as_of_date AS DATE) for comparisons,\n"
+                    f"      or use the 'latest' or 'recent' vocabulary mappings.\n\n"
+                    f"Original error: {error_msg}"
+                ) from e
+            
+            if "limit_utilization_pct" in error_msg and "trades" in error_msg:
+                raise RuntimeError(
+                    f"❌ Column ownership error.\n"
+                    f"Hint: limit_utilization_pct exists ONLY in ccr_limits, NOT in trades.\n"
+                    f"      Filter by ccr_limits.limit_utilization_pct instead.\n\n"
+                    f"Original error: {error_msg}"
+                ) from e
+            
+            if "does not have a column" in error_msg or "not found" in error_msg:
+                raise RuntimeError(
+                    f"❌ Column not found in table.\n"
+                    f"Hint: Check column ownership in schema:\n"
+                    f"      - limit_utilization_pct, exposure_*, limit_*: ONLY in ccr_limits\n"
+                    f"      - mtm, notional, product, failed_trade: ONLY in trades\n"
+                    f"      - adaptiv_code, as_of_date, currency: In BOTH tables\n\n"
+                    f"Original error: {error_msg}"
+                ) from e
+            
+            # Re-raise with original error if no specific hint
+            raise
     finally:
         con.close()
     

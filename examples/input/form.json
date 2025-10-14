@@ -1,6 +1,74 @@
 {
   "mode": "parquet",
   
+  "schema": {
+    "relationship": "ccr_limits (1) ←→ (N) trades via adaptiv_code",
+    "tables": {
+      "ccr_limits": {
+        "entity": "Counterparty credit exposure aggregates (one row per counterparty per date)",
+        "columns": {
+          "adaptiv_code": "Primary key: Unique counterparty identifier (FK to trades)",
+          "customer_name": "Counterparty legal name",
+          "exposure_epe": "Expected Positive Exposure (average future exposure)",
+          "exposure_pfe": "Potential Future Exposure (worst-case at confidence level)",
+          "exposure_ead": "Exposure at Default (regulatory capital measure)",
+          "limit_ccr": "Approved credit limit for counterparty",
+          "limit_buffer": "Headroom: limit_ccr - exposure_pfe",
+          "limit_utilization_pct": "Utilization percentage: (exposure_pfe / limit_ccr) * 100. >100 = BREACH",
+          "currency": "Reporting currency (USD/CAD)",
+          "booking_location": "Trading location (TOR/NYC/LDN/HKG/SYD)",
+          "portfolio": "Risk portfolio (FX-Derivs/Rates/Commodities/Credit/Equities)",
+          "risk_owner": "Responsible desk",
+          "as_of_date": "Business date (VARCHAR, use CAST for comparisons)"
+        }
+      },
+      "trades": {
+        "entity": "Individual trade positions (many rows per counterparty)",
+        "columns": {
+          "trade_id": "Primary key: Unique trade identifier",
+          "adaptiv_code": "Foreign key: Links to ccr_limits.adaptiv_code",
+          "product": "Trade product type (FX FWD/IRS/CDS/etc)",
+          "notional": "Trade notional amount",
+          "mtm": "Mark-to-Market value (current P&L)",
+          "asset_class": "FX/Rates/Commodities/Credit/Equities",
+          "desk": "Trading desk",
+          "book": "Trading book code",
+          "trade_date": "Trade execution date",
+          "maturity_date": "Trade maturity date",
+          "counterparty": "Counterparty name (same as customer_name in ccr_limits)",
+          "netting_set": "ISDA netting agreement ID",
+          "csa_flag": "Credit Support Annex exists (boolean)",
+          "collateralized": "Trade is collateralized (boolean)",
+          "risk_factor": "Primary risk factor",
+          "delta": "Price sensitivity",
+          "gamma": "Delta sensitivity (convexity)",
+          "vega": "Volatility sensitivity",
+          "pnl": "Profit and loss",
+          "currency": "Trade currency",
+          "failed_trade": "Exposure calc failed, exposure = notional (overstated)",
+          "as_of_date": "Business date (VARCHAR, use CAST for comparisons)"
+        }
+      }
+    },
+    "constraints": {
+      "join": "ccr_limits.adaptiv_code = trades.adaptiv_code",
+      "date_filter": "CAST(as_of_date AS DATE) for comparisons (stored as VARCHAR)",
+      "column_ownership": {
+        "limit_utilization_pct": "ONLY in ccr_limits",
+        "exposure_*": "ONLY in ccr_limits",
+        "limit_*": "ONLY in ccr_limits",
+        "trade_id": "ONLY in trades",
+        "product": "ONLY in trades",
+        "mtm": "ONLY in trades",
+        "notional": "ONLY in trades",
+        "failed_trade": "ONLY in trades",
+        "adaptiv_code": "In BOTH tables (join key)",
+        "as_of_date": "In BOTH tables",
+        "currency": "In BOTH tables"
+      }
+    }
+  },
+  
   "tables": {
     "ccr_limits": {
       "description": "CCR exposure vs limits by counterparty",
@@ -54,8 +122,8 @@
   
   "prompts": {
     "dialect_hint": "DuckDB SQL",
-    "system": "You are a senior data analyst who writes safe, efficient SQL for {dialect_hint}. Use ONLY the provided tables/columns. Prefer explicit JOINs and qualified names. Return a single runnable SQL statement. No commentary.\n\nBUSINESS RULES:\n- failed_trade=true means exposure calculation failed; exposure is conservatively set equal to notional (overstated).",
-    "user_template": "SCHEMA:\n{schema_text}\n\nVOCABULARY (synonyms → canonical):\n{vocabulary}\n\nTASK:\nWrite a single {dialect_hint} SQL statement for this request:\n\"{user_request}\"\n\nRULES:\n- Use ONLY tables/columns in SCHEMA.\n- Join ccr_limits and trades via ccr_limits.adaptiv_code = trades.adaptiv_code when needed.\n- If the request implies record sampling and no total aggregation, apply LIMIT {default_limit}.\n- SELECT/CTEs only (no writes).\n- Return SQL ONLY, no explanations."
+    "system": "You are a senior data analyst who writes safe, efficient SQL for {dialect_hint}. Use ONLY the provided tables/columns. Prefer explicit JOINs and qualified names. Return a single runnable SQL statement. No commentary.\n\nENTITY RELATIONSHIPS:\n- ccr_limits (1) ←→ (N) trades via adaptiv_code\n- ccr_limits: Counterparty-level aggregates (exposure, limits)\n- trades: Trade-level details (products, MTM, greeks)\n\nCOLUMN OWNERSHIP (CRITICAL):\n- limit_utilization_pct, exposure_*, limit_*: ONLY in ccr_limits\n- trade_id, product, mtm, notional, failed_trade: ONLY in trades  \n- adaptiv_code, as_of_date, currency: In BOTH tables\n\nDATA TYPES:\n- as_of_date is VARCHAR: ALWAYS use CAST(as_of_date AS DATE) for comparisons\n\nBUSINESS RULES:\n- failed_trade=true means exposure calculation failed; exposure is conservatively set equal to notional (overstated).",
+    "user_template": "SCHEMA:\n{schema_text}\n\nVOCABULARY (synonyms → canonical):\n{vocabulary}\n\nTASK:\nWrite a single {dialect_hint} SQL statement for this request:\n\"{user_request}\"\n\nCRITICAL CONSTRAINTS:\n- limit_utilization_pct is ONLY in ccr_limits, NOT in trades\n- exposure_* columns are ONLY in ccr_limits\n- mtm, notional, product, failed_trade are ONLY in trades\n- as_of_date is VARCHAR: use CAST(as_of_date AS DATE) for date comparisons\n- JOIN: ccr_limits.adaptiv_code = trades.adaptiv_code\n\nRULES:\n- Use ONLY tables/columns in SCHEMA\n- Use vocabulary mappings when available\n- If sampling implied, apply LIMIT {default_limit}\n- SELECT/CTEs only (no writes)\n- Return SQL ONLY, no explanations"
   },
   
   "model": {
