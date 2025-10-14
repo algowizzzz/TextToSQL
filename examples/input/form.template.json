@@ -39,11 +39,12 @@
       }
     },
     "trades": {
-      "description": "Trade-level data for customers with limits",
+      "description": "Trade-level data for customers with limits. NOTE: failed_trade=true indicates exposure calculation failed; exposure is conservatively set equal to notional (overstated fallback).",
       "columns": [
         "trade_id", "adaptiv_code", "product", "notional", "mtm", "asset_class",
         "desk", "book", "trade_date", "maturity_date", "counterparty", "netting_set",
-        "csa_flag", "collateralized", "risk_factor", "delta", "gamma", "vega", "pnl", "currency"
+        "csa_flag", "collateralized", "risk_factor", "delta", "gamma", "vega", "pnl", "currency",
+        "failed_trade", "as_of_date"
       ],
       "source": {
         "file_path": "input/data/trades.parquet"
@@ -58,7 +59,12 @@
     "limit utilization": "limit_utilization_pct",
     "counterparty code": "adaptiv_code",
     "breach": "limit_utilization_pct > 100",
-    "headroom": "limit_ccr - exposure_pfe"
+    "headroom": "limit_ccr - exposure_pfe",
+    "failed": "failed_trade = true",
+    "failed exposure": "failed_trade = true (exposure calculation failed, set to notional)",
+    "overstated exposure": "failed_trade = true (conservative fallback)",
+    "latest": "as_of_date = (SELECT MAX(as_of_date) FROM ccr_limits)",
+    "recent": "as_of_date >= CURRENT_DATE - INTERVAL 7 DAYS"
   },
   
   "limits": {
@@ -72,7 +78,7 @@
   "prompts": {
     "_comment": "LLM prompt templates (edit with caution)",
     "dialect_hint": "DuckDB SQL",
-    "system": "You are a senior data analyst who writes safe, efficient SQL for {dialect_hint}. Use ONLY the provided tables/columns. Return a single runnable SQL statement. No commentary.",
+    "system": "You are a senior data analyst who writes safe, efficient SQL for {dialect_hint}. Use ONLY the provided tables/columns. Return a single runnable SQL statement. No commentary.\n\nBUSINESS RULES:\n- failed_trade=true means exposure calculation failed; exposure is conservatively set equal to notional (overstated).",
     "user_template": "SCHEMA:\n{schema_text}\n\nVOCABULARY:\n{vocabulary}\n\nTASK:\nWrite a single {dialect_hint} SQL statement for:\n\"{user_request}\"\n\nRULES:\n- Use ONLY tables/columns in SCHEMA.\n- Join tables via adaptiv_code when needed.\n- If sampling implied, apply LIMIT {default_limit}.\n- SELECT/CTEs only; return SQL only."
   },
   
@@ -87,8 +93,8 @@
     "_comment": "Auto-generate natural language insights about query results (requires --use-llm or --with-commentary)",
     "enabled": true,
     "max_rows_in_prompt": 20,
-    "system_prompt": "You are a senior risk analyst providing concise insights on CCR exposure and trading data. Be specific with numbers, highlight key risks, and keep responses to 3-5 sentences.",
-    "user_template": "USER ASKED: \"{user_request}\"\n\nQUERY RESULTS ({row_count} rows):\nColumns: {columns}\n\nSample Data (first {sample_size} rows):\n{data_preview}\n\nProvide a brief, insightful commentary (3-5 sentences) that DIRECTLY ANSWERS the user's question using this data. Focus on what the user specifically asked about, highlighting key risks, exposures, or notable patterns relevant to their request."
+    "system_prompt": "You are a data analyst. Provide factual insights using ONLY the data shown. No speculation. Each statement must cite specific numbers.\n\nBUSINESS CONTEXT:\n- failed_trade=true: Exposure calculation failed, conservatively set to notional (overstated).",
+    "user_template": "USER ASKED: \"{user_request}\"\n\nDATA ({row_count} rows, showing first {sample_size}):\nColumns: {columns}\n{data_preview}\n\nProvide 2-4 concise bullet points that DIRECTLY ANSWER the question. Each bullet: cite specific numbers and explain what they mean in context. No generic statements."
   },
   
   "optimization": {
