@@ -1,0 +1,68 @@
+{
+  "mode": "file",
+  
+  "tables": {
+    "ccr_limits": {
+      "description": "CCR exposure vs limits by counterparty",
+      "columns": [
+        "adaptiv_code", "customer_name", "sector", "rating", "country", "region",
+        "portfolio", "booking_location", "currency", "as_of_date",
+        "exposure_epe", "exposure_pfe", "exposure_ead", "exposure_var", "exposure_stress",
+        "limit_ccr", "limit_type", "limit_buffer", "limit_utilization_pct", "risk_owner"
+      ],
+      "source": {
+        "file_path": "input/data/ccr_limits.json"
+      }
+    },
+    "trades": {
+      "description": "Trade-level data for customers with limits",
+      "columns": [
+        "trade_id", "adaptiv_code", "product", "notional", "mtm", "asset_class",
+        "desk", "book", "trade_date", "maturity_date", "counterparty", "netting_set",
+        "csa_flag", "collateralized", "risk_factor", "delta", "gamma", "vega", "pnl", "currency"
+      ],
+      "source": {
+        "file_path": "input/data/trades.json"
+      }
+    }
+  },
+  
+  "vocabulary": {
+    "adaptiv code": "adaptiv_code",
+    "utilization": "limit_utilization_pct",
+    "limit utilization": "limit_utilization_pct",
+    "counterparty code": "adaptiv_code",
+    "breach": "limit_utilization_pct > 100",
+    "breaches": "limit_utilization_pct > 100",
+    "headroom": "limit_ccr - exposure_pfe",
+    "mark to market": "mtm",
+    "mark-to-market": "mtm",
+    "notional amount": "notional"
+  },
+  
+  "limits": {
+    "default_limit": 200,
+    "hard_max_rows": 1000,
+    "allow_non_select": false,
+    "timeout_seconds": 30
+  },
+  
+  "prompts": {
+    "dialect_hint": "DuckDB SQL",
+    "system": "You are a senior data analyst who writes safe, efficient SQL for {dialect_hint}. Use ONLY the provided tables/columns. Prefer explicit JOINs and qualified names. Return a single runnable SQL statement. No commentary.",
+    "user_template": "SCHEMA:\n{schema_text}\n\nVOCABULARY (synonyms → canonical):\n{vocabulary}\n\nTASK:\nWrite a single {dialect_hint} SQL statement for this request:\n\"{user_request}\"\n\nRULES:\n- Use ONLY tables/columns in SCHEMA.\n- Join ccr_limits and trades via ccr_limits.adaptiv_code = trades.adaptiv_code when needed.\n- If the request implies record sampling and no total aggregation, apply LIMIT {default_limit}.\n- SELECT/CTEs only (no writes).\n- Return SQL ONLY, no explanations."
+  },
+  
+  "model": {
+    "provider": "openai",
+    "name": "gpt-4o-mini",
+    "temperature": 0.0
+  },
+  
+  "rule_based_queries": {
+    "top breaches headroom": "SELECT l.adaptiv_code, l.customer_name, l.exposure_pfe, l.limit_ccr, (l.limit_ccr - l.exposure_pfe) AS headroom, l.limit_utilization_pct FROM ccr_limits l WHERE l.limit_utilization_pct > 100 ORDER BY l.limit_utilization_pct DESC LIMIT 200",
+    "top trades by mtm for breaches": "WITH breaching AS (SELECT adaptiv_code FROM ccr_limits WHERE limit_utilization_pct > 100) SELECT t.adaptiv_code, t.trade_id, t.product, t.mtm FROM trades t JOIN breaching b ON b.adaptiv_code = t.adaptiv_code QUALIFY ROW_NUMBER() OVER (PARTITION BY t.adaptiv_code ORDER BY ABS(t.mtm) DESC) <= 3 ORDER BY t.adaptiv_code LIMIT 200",
+    "portfolio utilization summary": "SELECT portfolio, booking_location, SUM(exposure_epe) AS total_epe, COUNT(DISTINCT adaptiv_code) AS counterparties, AVG(limit_utilization_pct) AS avg_utilization FROM ccr_limits GROUP BY 1,2 ORDER BY total_epe DESC LIMIT 200"
+  }
+}
+
