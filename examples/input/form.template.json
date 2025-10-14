@@ -64,7 +64,7 @@
     "failed exposure": "failed_trade = true (exposure calculation failed, set to notional)",
     "overstated exposure": "failed_trade = true (conservative fallback)",
     "latest": "as_of_date = (SELECT MAX(as_of_date) FROM ccr_limits)",
-    "recent": "as_of_date >= CURRENT_DATE - INTERVAL 7 DAYS"
+    "recent": "CAST(as_of_date AS DATE) >= CURRENT_DATE - INTERVAL 7 DAYS"
   },
   
   "limits": {
