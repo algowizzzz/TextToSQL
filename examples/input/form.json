@@ -59,6 +59,13 @@
     "temperature": 0.0
   },
   
+  "commentary": {
+    "enabled": true,
+    "max_rows_in_prompt": 20,
+    "system_prompt": "You are a senior risk analyst providing concise insights on CCR exposure and trading data. Be specific with numbers, highlight key risks, and keep responses to 3-5 sentences.",
+    "user_template": "USER REQUEST: \"{user_request}\"\n\nQUERY RESULTS ({row_count} rows):\nColumns: {columns}\n\nSample Data (first {sample_size} rows):\n{data_preview}\n\nProvide a brief, insightful commentary (3-5 sentences) about what this data shows. Focus on key risks, exposures, or notable patterns."
+  },
+  
   "rule_based_queries": {
     "top breaches headroom": "SELECT l.adaptiv_code, l.customer_name, l.exposure_pfe, l.limit_ccr, (l.limit_ccr - l.exposure_pfe) AS headroom, l.limit_utilization_pct FROM ccr_limits l WHERE l.limit_utilization_pct > 100 ORDER BY l.limit_utilization_pct DESC LIMIT 200",
     "top trades by mtm for breaches": "WITH breaching AS (SELECT adaptiv_code FROM ccr_limits WHERE limit_utilization_pct > 100) SELECT t.adaptiv_code, t.trade_id, t.product, t.mtm FROM trades t JOIN breaching b ON b.adaptiv_code = t.adaptiv_code QUALIFY ROW_NUMBER() OVER (PARTITION BY t.adaptiv_code ORDER BY ABS(t.mtm) DESC) <= 3 ORDER BY t.adaptiv_code LIMIT 200",

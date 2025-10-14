@@ -8,6 +8,7 @@
 - **Two modes**: `file` (local JSON files) or `api` (REST endpoints, 10k+ rows)
 - **CSV-in-JSON loader**: Optimized for large datasets (< 40ms parse time)
 - **Optional LLM**: OpenAI GPT for natural language queries
+- **Auto-commentary**: LLM-generated insights about query results (NEW!)
 - **SQL guardrails**: SELECT-only, LIMIT enforcement
 - **Fast execution**: DuckDB in-memory processing
 
@@ -58,6 +59,9 @@ echo "OPENAI_API_KEY=sk-..." > .env
 
 # Use natural language
 python json_sql_copilot.py --form input/form.json --use-llm --q "Show FX trades over 10M"
+
+# With auto-commentary (LLM generates insights about the results)
+python json_sql_copilot.py --form input/form.json --use-llm --q "summary of Northbridge Capital exposure and trades"
 ```
 
 ---
@@ -122,6 +126,11 @@ python json_sql_copilot.py --form input/form.json --use-llm --q "Show FX trades 
 ### Optional
 
 - **`rule_based_queries`** - Pre-built SQL queries
+- **`commentary`** - Auto-generate insights about results (NEW!)
+  - `enabled` - Enable/disable commentary
+  - `max_rows_in_prompt` - How many rows to analyze
+  - `system_prompt` - Instructions for the analyst persona
+  - `user_template` - Template for commentary generation
 
 See `input/form.template.json` for complete example with comments.
 
@@ -285,6 +294,7 @@ Optional:
   --form PATH          Path to form.json (default: input/form.json)
   --use-llm            Use OpenAI for natural language (requires OPENAI_API_KEY in .env)
   --print-sql          Show generated and executed SQL
+  --with-commentary    Generate LLM commentary about results (auto-enabled with --use-llm)
 ```
 
 ### Examples
@@ -295,8 +305,11 @@ python json_sql_copilot.py --form input/form.json --q "top breaches headroom"
 # With SQL output
 python json_sql_copilot.py --form input/form.json --q "portfolio utilization summary" --print-sql
 
-# Natural language with LLM
-python json_sql_copilot.py --form input/form.json --use-llm --q "Show me high risk counterparties"
+# Natural language with LLM (auto-generates commentary)
+python json_sql_copilot.py --form input/form.json --use-llm --q "summary of Northbridge Capital exposure"
+
+# Force commentary on pre-built query
+python json_sql_copilot.py --form input/form.json --with-commentary --q "top breaches headroom"
 ```
 
 ---

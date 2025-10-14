@@ -223,6 +223,18 @@ class OpenAIAdapter:
             ],
         )
         return rsp.choices[0].message.content.strip()
+    
+    def generate_commentary(self, system_prompt: str, user_prompt: str, temperature: float = 0.3) -> str:
+        """Generate natural language commentary about query results."""
+        rsp = self.client.chat.completions.create(
+            model=self.model,
+            temperature=temperature,  # Slightly higher for more natural language
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        return rsp.choices[0].message.content.strip()
 
 # =========================================
 # SQL guardrails
@@ -314,7 +326,75 @@ def generate_sql(form: Dict[str, Any], user_request: str, use_llm: bool) -> str:
 # Query runner
 # =========================================
 
-def run_query(form: Dict[str, Any], user_request: str, use_llm: bool = False) -> Dict[str, Any]:
+def generate_commentary(form: Dict[str, Any], user_request: str, result: Dict[str, Any]) -> Optional[str]:
+    """Generate natural language commentary about query results using LLM."""
+    commentary_cfg = form.get("commentary", {})
+    
+    if not commentary_cfg.get("enabled", False):
+        return None
+    
+    if not have_openai():
+        return None
+    
+    if not os.getenv("OPENAI_API_KEY"):
+        return None
+    
+    # Prepare data preview
+    max_rows = commentary_cfg.get("max_rows_in_prompt", 20)
+    sample_rows = result["rows"][:max_rows]
+    
+    # Format data as readable text
+    data_lines = []
+    for i, row in enumerate(sample_rows, 1):
+        row_dict = dict(zip(result["columns"], row))
+        # Format row compactly
+        row_str = ", ".join([f"{k}={v}" for k, v in row_dict.items()])
+        data_lines.append(f"{i}. {row_str}")
+    
+    data_preview = "\n".join(data_lines)
+    
+    # Build prompts
+    system_prompt = commentary_cfg.get(
+        "system_prompt",
+        "You are a data analyst providing concise insights. Be specific and focus on key findings."
+    )
+    
+    user_template = commentary_cfg.get(
+        "user_template",
+        "USER REQUEST: \"{user_request}\"\n\nRESULTS ({row_count} rows):\n{data_preview}\n\nProvide brief commentary (3-5 sentences)."
+    )
+    
+    user_prompt = user_template.format(
+        user_request=user_request,
+        row_count=result["row_count"],
+        columns=", ".join(result["columns"]),
+        sample_size=len(sample_rows),
+        data_preview=data_preview
+    )
+    
+    # Generate commentary
+    try:
+        model_cfg = form["model"]
+        llm = OpenAIAdapter(
+            model=os.getenv("OPENAI_MODEL", model_cfg["name"]),
+            temperature=model_cfg.get("temperature", 0.0)
+        )
+        commentary_t0 = time.time()
+        commentary_text = llm.generate_commentary(system_prompt, user_prompt, temperature=0.3)
+        commentary_ms = int((time.time() - commentary_t0) * 1000)
+        
+        return {
+            "text": commentary_text,
+            "generation_time_ms": commentary_ms
+        }
+    except Exception as e:
+        # Silently fail - commentary is optional
+        return {
+            "text": f"[Commentary generation failed: {str(e)}]",
+            "generation_time_ms": 0
+        }
+
+def run_query(form: Dict[str, Any], user_request: str, use_llm: bool = False, with_commentary: bool = False) -> Dict[str, Any]:
     """Execute natural language query and return results."""
     t0 = time.time()
     
@@ -344,7 +424,7 @@ def run_query(form: Dict[str, Any], user_request: str, use_llm: bool = False) ->
     finally:
         con.close()
     
-    return {
+    result = {
         "sql_generated": sql_raw.strip(),
         "sql_executed": sql_final.strip(),
         "columns": list(res_df.columns),
@@ -358,6 +438,15 @@ def run_query(form: Dict[str, Any], user_request: str, use_llm: bool = False) ->
         "dialect": form["prompts"]["dialect_hint"],
         "mode": form["mode"],
     }
+    
+    # 4) Optional: Generate commentary
+    if with_commentary or (use_llm and form.get("commentary", {}).get("enabled", False)):
+        commentary = generate_commentary(form, user_request, result)
+        if commentary:
+            result["commentary"] = commentary
+            result["timings_ms"]["commentary"] = commentary.get("generation_time_ms", 0)
+    
+    return result
 
 # =========================================
 # CLI
@@ -370,6 +459,7 @@ def main():
     ap.add_argument("--q", required=True, help="Natural language request")
     ap.add_argument("--use-llm", action="store_true", help="Use OpenAI to generate SQL (requires OPENAI_API_KEY)")
     ap.add_argument("--print-sql", action="store_true", help="Print the generated & executed SQL")
+    ap.add_argument("--with-commentary", action="store_true", help="Generate LLM commentary about results")
     ap.add_argument("--form", default="input/form.json", help="Path to form.json (default: input/form.json)")
     args = ap.parse_args()
     
@@ -378,7 +468,7 @@ def main():
     form = load_form(args.form)
     
     # Run query
-    out = run_query(form, args.q, use_llm=args.use_llm)
+    out = run_query(form, args.q, use_llm=args.use_llm, with_commentary=args.with_commentary)
     
     if args.print_sql:
         print("\n--- SQL (generated) ---\n", out["sql_generated"])
@@ -386,14 +476,23 @@ def main():
     
     # Pretty print result
     print("\n--- RESULT ---")
-    print(json.dumps({
+    result_output = {
         "mode": out["mode"],
         "columns": out["columns"],
         "row_count": out["row_count"],
         "rows": out["rows"],
         "warnings": out["warnings"],
         "timings_ms": out["timings_ms"],
-    }, indent=2, default=str))
+    }
+    print(json.dumps(result_output, indent=2, default=str))
+    
+    # Print commentary if available
+    if "commentary" in out:
+        print("\n" + "="*70)
+        print("💡 COMMENTARY")
+        print("="*70)
+        print(out["commentary"]["text"])
+        print("="*70)
 
 if __name__ == "__main__":
     main()

@@ -83,6 +83,14 @@
     "temperature": 0.0
   },
   
+  "commentary": {
+    "_comment": "Auto-generate natural language insights about query results (requires --use-llm or --with-commentary)",
+    "enabled": true,
+    "max_rows_in_prompt": 20,
+    "system_prompt": "You are a senior risk analyst providing concise insights on CCR exposure and trading data. Be specific with numbers, highlight key risks, and keep responses to 3-5 sentences.",
+    "user_template": "USER REQUEST: \"{user_request}\"\n\nQUERY RESULTS ({row_count} rows):\nColumns: {columns}\n\nSample Data (first {sample_size} rows):\n{data_preview}\n\nProvide a brief, insightful commentary (3-5 sentences) about what this data shows. Focus on key risks, exposures, or notable patterns."
+  },
+  
   "rule_based_queries": {
     "_comment": "Pre-built queries that work without LLM",
     "top breaches headroom": "SELECT l.adaptiv_code, l.customer_name, l.limit_utilization_pct, (l.limit_ccr - l.exposure_pfe) AS headroom FROM ccr_limits l WHERE l.limit_utilization_pct > 100 ORDER BY l.limit_utilization_pct DESC"
