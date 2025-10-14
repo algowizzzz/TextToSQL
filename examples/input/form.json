@@ -18,7 +18,8 @@
       "columns": [
         "trade_id", "adaptiv_code", "product", "notional", "mtm", "asset_class",
         "desk", "book", "trade_date", "maturity_date", "counterparty", "netting_set",
-        "csa_flag", "collateralized", "risk_factor", "delta", "gamma", "vega", "pnl", "currency"
+        "csa_flag", "collateralized", "risk_factor", "delta", "gamma", "vega", "pnl", "currency",
+        "failed_trade", "as_of_date"
       ],
       "source": {
         "file_path": "input/data/trades.parquet"
@@ -36,7 +37,10 @@
     "headroom": "limit_ccr - exposure_pfe",
     "mark to market": "mtm",
     "mark-to-market": "mtm",
-    "notional amount": "notional"
+    "notional amount": "notional",
+    "failed": "failed_trade = true",
+    "latest": "as_of_date = (SELECT MAX(as_of_date) FROM ccr_limits)",
+    "recent": "as_of_date >= CURRENT_DATE - INTERVAL 7 DAYS"
   },
   
   "limits": {
@@ -62,7 +66,7 @@
     "enabled": true,
     "max_rows_in_prompt": 20,
     "system_prompt": "You are a senior risk analyst providing concise insights on CCR exposure and trading data. Be specific with numbers, highlight key risks, and keep responses to concise well framed bullets. avoid BS.",
-    "user_template": "USER REQUEST: \"{user_request}\"\n\nQUERY RESULTS ({row_count} rows):\nColumns: {columns}\n\nSample Data (first {sample_size} rows):\n{data_preview}\n\nProvide a brief, insightful bulletted commentary (3-5 sentences) about what this data shows. Focus on key risks, exposures, or notable patterns."
+    "user_template": "USER ASKED: \"{user_request}\"\n\nQUERY RESULTS ({row_count} rows):\nColumns: {columns}\n\nSample Data (first {sample_size} rows):\n{data_preview}\n\nProvide a brief, insightful bulletted commentary (3-5 sentences) that DIRECTLY ANSWERS the user's question using this data. Focus on what the user specifically asked about, highlighting key risks, exposures, or notable patterns relevant to their request."
   },
   
   "optimization": {
@@ -73,7 +77,10 @@
   "rule_based_queries": {
     "top breaches headroom": "SELECT l.adaptiv_code, l.customer_name, l.exposure_pfe, l.limit_ccr, (l.limit_ccr - l.exposure_pfe) AS headroom, l.limit_utilization_pct FROM ccr_limits l WHERE l.limit_utilization_pct > 100 ORDER BY l.limit_utilization_pct DESC LIMIT 200",
     "top trades by mtm for breaches": "WITH breaching AS (SELECT adaptiv_code FROM ccr_limits WHERE limit_utilization_pct > 100) SELECT t.adaptiv_code, t.trade_id, t.product, t.mtm FROM trades t JOIN breaching b ON b.adaptiv_code = t.adaptiv_code QUALIFY ROW_NUMBER() OVER (PARTITION BY t.adaptiv_code ORDER BY ABS(t.mtm) DESC) <= 3 ORDER BY t.adaptiv_code LIMIT 200",
-    "portfolio utilization summary": "SELECT portfolio, booking_location, SUM(exposure_epe) AS total_epe, COUNT(DISTINCT adaptiv_code) AS counterparties, AVG(limit_utilization_pct) AS avg_utilization FROM ccr_limits GROUP BY 1,2 ORDER BY total_epe DESC LIMIT 200"
+    "portfolio utilization summary": "SELECT portfolio, booking_location, SUM(exposure_epe) AS total_epe, COUNT(DISTINCT adaptiv_code) AS counterparties, AVG(limit_utilization_pct) AS avg_utilization FROM ccr_limits GROUP BY 1,2 ORDER BY total_epe DESC LIMIT 200",
+    "failed trades": "SELECT trade_id, counterparty, product, notional, as_of_date FROM trades WHERE failed_trade = true ORDER BY as_of_date DESC LIMIT 200",
+    "breach trend": "SELECT as_of_date, COUNT(*) as breach_count, AVG(limit_utilization_pct) as avg_util FROM ccr_limits WHERE limit_utilization_pct > 100 GROUP BY as_of_date ORDER BY as_of_date DESC LIMIT 200",
+    "daily trade volume": "SELECT as_of_date, COUNT(*) as trade_count, SUM(notional) as total_notional, SUM(CASE WHEN failed_trade THEN 1 ELSE 0 END) as failed_count FROM trades GROUP BY as_of_date ORDER BY as_of_date DESC LIMIT 200"
   }
 }
 

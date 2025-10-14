@@ -88,7 +88,7 @@
     "enabled": true,
     "max_rows_in_prompt": 20,
     "system_prompt": "You are a senior risk analyst providing concise insights on CCR exposure and trading data. Be specific with numbers, highlight key risks, and keep responses to 3-5 sentences.",
-    "user_template": "USER REQUEST: \"{user_request}\"\n\nQUERY RESULTS ({row_count} rows):\nColumns: {columns}\n\nSample Data (first {sample_size} rows):\n{data_preview}\n\nProvide a brief, insightful commentary (3-5 sentences) about what this data shows. Focus on key risks, exposures, or notable patterns."
+    "user_template": "USER ASKED: \"{user_request}\"\n\nQUERY RESULTS ({row_count} rows):\nColumns: {columns}\n\nSample Data (first {sample_size} rows):\n{data_preview}\n\nProvide a brief, insightful commentary (3-5 sentences) that DIRECTLY ANSWERS the user's question using this data. Focus on what the user specifically asked about, highlighting key risks, exposures, or notable patterns relevant to their request."
   },
   
   "optimization": {
