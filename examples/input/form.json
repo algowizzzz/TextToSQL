@@ -144,6 +144,19 @@
     "_comment": "Two-stage: Extract filters first (cheap), then generate SQL. Reduces LLM costs 30-50% and improves query performance."
   },
   
+  "agent": {
+    "enabled": false,
+    "_comment": "LangGraph multi-turn agent with self-correction (use json_sql_agent.py --agent)",
+    "max_turns": 3,
+    "system_prompt": "You are an expert SQL analyst. Generate accurate SQL for the user's question. Return ONLY the SQL query, no explanations or markdown. If refining based on feedback, return ONLY the corrected SQL query.",
+    "exit_node": {
+      "system_prompt": "You are a SQL quality evaluator. Determine if the query results adequately answer the user's question.",
+      "user_template": "USER ASKED: \"{user_request}\"\n\nSQL EXECUTED:\n{sql}\n\nRESULTS ({row_count} rows, showing first 5):\n{data_preview}\n\nEvaluate:\n- Does this answer the user's question?\n- Are the results reasonable?\n\nRespond with ONE of:\n- 'GOOD' if results adequately answer the question\n- 'REFINE: <specific issue>' if query needs correction (e.g., wrong table, wrong column, missing join)\n- 'EMPTY: <reason>' if zero results seem wrong"
+    },
+    "refinement_template": "PREVIOUS ATTEMPT:\nSQL: {previous_sql}\nResults: {row_count} rows\n\nISSUE IDENTIFIED:\n{feedback}\n\nRefine the SQL to fix this issue. Remember:\n- Schema: {schema_hint}\n- Column ownership: limit_utilization_pct is ONLY in ccr_limits, mtm/notional are ONLY in trades",
+    "fallback_message": "Max refinement turns ({max_turns}) reached. Returning best attempt."
+  },
+  
   "rule_based_queries": {
     "top breaches headroom": "SELECT l.adaptiv_code, l.customer_name, l.exposure_pfe, l.limit_ccr, (l.limit_ccr - l.exposure_pfe) AS headroom, l.limit_utilization_pct FROM ccr_limits l WHERE l.limit_utilization_pct > 100 ORDER BY l.limit_utilization_pct DESC LIMIT 200",
     "top trades by mtm for breaches": "WITH breaching AS (SELECT adaptiv_code FROM ccr_limits WHERE limit_utilization_pct > 100) SELECT t.adaptiv_code, t.trade_id, t.product, t.mtm FROM trades t JOIN breaching b ON b.adaptiv_code = t.adaptiv_code QUALIFY ROW_NUMBER() OVER (PARTITION BY t.adaptiv_code ORDER BY ABS(t.mtm) DESC) <= 3 ORDER BY t.adaptiv_code LIMIT 200",
