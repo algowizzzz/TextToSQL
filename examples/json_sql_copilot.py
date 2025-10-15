@@ -212,33 +212,58 @@ def have_openai() -> bool:
         return False
 
 class OpenAIAdapter:
+    """Adapter for OpenAI API with support for reasoning models (o1/o1-mini)."""
     def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0.0):
         from openai import OpenAI
         self.client = OpenAI()
         self.model = model
         self.temperature = temperature
+        # o1 models don't support system prompts or temperature
+        self.is_reasoning_model = model.startswith("o1")
 
     def generate_sql(self, system_prompt: str, user_prompt: str) -> str:
-        rsp = self.client.chat.completions.create(
-            model=self.model,
-            temperature=self.temperature,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
+        if self.is_reasoning_model:
+            # o1 models: combine system + user into single user message
+            combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+            rsp = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "user", "content": combined_prompt},
+                ],
+            )
+        else:
+            # Standard models: separate system and user messages
+            rsp = self.client.chat.completions.create(
+                model=self.model,
+                temperature=self.temperature,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
         return rsp.choices[0].message.content.strip()
     
     def generate_commentary(self, system_prompt: str, user_prompt: str, temperature: float = 0.3) -> str:
         """Generate natural language commentary about query results."""
-        rsp = self.client.chat.completions.create(
-            model=self.model,
-            temperature=temperature,  # Slightly higher for more natural language
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
+        if self.is_reasoning_model:
+            # o1 models: combine system + user into single user message
+            combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+            rsp = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "user", "content": combined_prompt},
+                ],
+            )
+        else:
+            # Standard models: separate system and user messages
+            rsp = self.client.chat.completions.create(
+                model=self.model,
+                temperature=temperature,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
         return rsp.choices[0].message.content.strip()
 
 # =========================================

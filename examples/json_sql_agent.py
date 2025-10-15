@@ -94,10 +94,17 @@ def generate_sql_node(state: AgentState) -> Dict:
     
     # Get LLM
     model_cfg = form.get("model", {})
-    llm = ChatOpenAI(
-        model=os.getenv("OPENAI_MODEL", model_cfg.get("name", "gpt-4o-mini")),
-        temperature=model_cfg.get("temperature", 0.0)
-    )
+    model_name = os.getenv("OPENAI_MODEL", model_cfg.get("name", "gpt-4o-mini"))
+    is_reasoning_model = model_name.startswith("o1")
+    
+    # o1 models don't support temperature parameter
+    if is_reasoning_model:
+        llm = ChatOpenAI(model=model_name)
+    else:
+        llm = ChatOpenAI(
+            model=model_name,
+            temperature=model_cfg.get("temperature", 0.0)
+        )
     
     # Build prompt based on turn
     if turn == 0:
@@ -123,11 +130,15 @@ def generate_sql_node(state: AgentState) -> Dict:
     
     print(f"📝 Generating SQL (attempt {turn + 1})...")
     
-    # Call LLM
-    messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_prompt)
-    ]
+    # Call LLM (o1 models require combining system + user into single user message)
+    if is_reasoning_model:
+        combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+        messages = [HumanMessage(content=combined_prompt)]
+    else:
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
     
     response = llm.invoke(messages)
     sql_raw = response.content.strip()
@@ -311,15 +322,27 @@ def review_node(state: AgentState) -> Dict:
     
     # Call LLM for evaluation
     model_cfg = form.get("model", {})
-    llm = ChatOpenAI(
-        model=os.getenv("OPENAI_MODEL", model_cfg.get("name", "gpt-4o-mini")),
-        temperature=0.3  # Slightly higher for evaluation
-    )
+    model_name = os.getenv("OPENAI_MODEL", model_cfg.get("name", "gpt-4o-mini"))
+    is_reasoning_model = model_name.startswith("o1")
     
-    messages = [
-        SystemMessage(content=exit_config["system_prompt"]),
-        HumanMessage(content=user_prompt)
-    ]
+    # o1 models don't support temperature parameter
+    if is_reasoning_model:
+        llm = ChatOpenAI(model=model_name)
+    else:
+        llm = ChatOpenAI(
+            model=model_name,
+            temperature=0.3  # Slightly higher for evaluation
+        )
+    
+    # o1 models require combining system + user into single user message
+    if is_reasoning_model:
+        combined_prompt = f"{exit_config['system_prompt']}\n\n{user_prompt}"
+        messages = [HumanMessage(content=combined_prompt)]
+    else:
+        messages = [
+            SystemMessage(content=exit_config["system_prompt"]),
+            HumanMessage(content=user_prompt)
+        ]
     
     response = llm.invoke(messages)
     evaluation = response.content.strip()
@@ -502,16 +525,28 @@ def generate_commentary_for_agent(form: Dict[str, Any], user_request: str, resul
     model_cfg = form.get("model", {})
     model_name = model_cfg.get("name", "gpt-4o-mini")
     temperature = commentary_cfg.get("temperature", 0.3)
+    is_reasoning_model = model_name.startswith("o1")
     
     try:
-        rsp = client.chat.completions.create(
-            model=model_name,
-            temperature=temperature,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
+        if is_reasoning_model:
+            # o1 models: combine system + user into single user message, no temperature
+            combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+            rsp = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "user", "content": combined_prompt},
+                ],
+            )
+        else:
+            # Standard models: separate system and user messages
+            rsp = client.chat.completions.create(
+                model=model_name,
+                temperature=temperature,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
         return rsp.choices[0].message.content.strip()
     except Exception as e:
         print(f"⚠️  Commentary generation failed: {e}")

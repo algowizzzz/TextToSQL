@@ -155,6 +155,8 @@
     "_comment": "LLM configuration (requires OPENAI_API_KEY in .env)",
     "provider": "openai",
     "name": "gpt-4o-mini",
+    "_model_options": "Reasoning models: o1-mini (recommended), o1, o1-preview. Standard models: gpt-4o-mini, gpt-4o, gpt-4-turbo",
+    "_note": "o1 models use extended reasoning, ignore temperature (fixed at 1.0), and auto-combine system+user prompts",
     "temperature": 0.0
   },
   

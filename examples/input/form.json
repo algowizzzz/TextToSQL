@@ -128,7 +128,8 @@
   
   "model": {
     "provider": "openai",
-    "name": "gpt-4o-mini",
+    "name": "o1-mini",
+    "_comment": "Reasoning models: o1-mini (recommended), o1, o1-preview. Standard models: gpt-4o-mini, gpt-4o, gpt-4-turbo. Note: o1 models ignore temperature (fixed at 1.0) and auto-combine system+user prompts.",
     "temperature": 0.0
   },
   
