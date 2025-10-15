@@ -174,6 +174,22 @@
     "_explanation": "Two-stage: Extract WHERE filters first (Stage 1), then generate optimized SQL (Stage 2). Reduces LLM costs 30-50%, improves query performance with predicate pushdown."
   },
   
+  "reference_values": {
+    "_comment": "Provide LLM with actual unique values from data for better entity disambiguation",
+    "enabled": true,
+    "max_values_per_column": 20,
+    "_explanation": "At runtime, extracts DISTINCT values from specified columns and injects into system prompt. Helps LLM distinguish between customer names vs product names, etc.",
+    "_example": "customer_name: 'Aurora Metals', 'Northbridge Capital' vs product: 'FX FWD', 'IRS'",
+    "tables": {
+      "ccr_limits": {
+        "columns": ["customer_name", "portfolio", "booking_location", "as_of_date"]
+      },
+      "trades": {
+        "columns": ["product", "counterparty", "asset_class", "desk", "as_of_date"]
+      }
+    }
+  },
+  
   "agent": {
     "_comment": "LangGraph multi-turn agent with self-correction (use json_sql_agent.py --agent)",
     "enabled": false,

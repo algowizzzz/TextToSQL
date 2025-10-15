@@ -304,13 +304,99 @@ def sanitize_sql(sql: str, allow_non_select: bool, default_limit: int, hard_max_
 # SQL generation
 # =========================================
 
-def build_prompts(form: Dict[str, Any], user_request: str) -> Tuple[str, str]:
+def extract_reference_values(form: Dict[str, Any]) -> Dict[str, Dict[str, List[str]]]:
+    """Extract unique values from specified columns for LLM context.
+    
+    Returns dict like: {"ccr_limits": {"customer_name": ["Aurora Metals", ...], ...}, ...}
+    """
+    ref_config = form.get("reference_values", {})
+    
+    if not ref_config.get("enabled", False):
+        return {}
+    
+    # Only works with parquet mode
+    if form.get("mode") != "parquet":
+        return {}
+    
+    max_values = ref_config.get("max_values_per_column", 20)
+    result = {}
+    
+    con = duckdb.connect(":memory:")
+    
+    try:
+        for table_name, table_config in ref_config.get("tables", {}).items():
+            # Get file path from tables.{table_name}.source.file_path
+            tables = form.get("tables", {})
+            if table_name not in tables:
+                continue
+            
+            table_def = tables[table_name]
+            source = table_def.get("source", {})
+            file_path = source.get("file_path")
+            
+            if not file_path:
+                continue
+            
+            result[table_name] = {}
+            
+            for column in table_config.get("columns", []):
+                try:
+                    query = f"""
+                        SELECT DISTINCT {column} 
+                        FROM read_parquet('{file_path}')
+                        WHERE {column} IS NOT NULL
+                        ORDER BY {column}
+                        LIMIT {max_values}
+                    """
+                    values = con.execute(query).fetchall()
+                    result[table_name][column] = [str(v[0]) for v in values]
+                except Exception as e:
+                    # Silently skip columns that don't exist or fail
+                    result[table_name][column] = []
+    finally:
+        con.close()
+    
+    return result
+
+def build_system_prompt_with_references(form: Dict[str, Any], ref_values: Dict[str, Dict[str, List[str]]]) -> str:
+    """Build system prompt with reference values injected."""
+    prompts = form["prompts"]
+    dialect = prompts["dialect_hint"]
+    base_prompt = prompts["system"].format(dialect_hint=dialect)
+    
+    if not ref_values:
+        return base_prompt
+    
+    # Build reference section
+    ref_lines = ["\n\nREFERENCE VALUES (actual data in tables):"]
+    
+    for table_name, columns in ref_values.items():
+        if not columns:
+            continue
+        ref_lines.append(f"\n{table_name}:")
+        for column, values in columns.items():
+            if not values:
+                continue
+            # Show first 10, indicate if more
+            display_values = values[:10]
+            values_str = ", ".join(f'"{v}"' for v in display_values)
+            if len(values) > 10:
+                values_str += f" ... ({len(values)} total)"
+            ref_lines.append(f"  - {column}: {values_str}")
+    
+    return base_prompt + "".join(ref_lines)
+
+def build_prompts(form: Dict[str, Any], user_request: str, ref_values: Optional[Dict[str, Dict[str, List[str]]]] = None) -> Tuple[str, str]:
     """Build LLM prompts from form."""
     prompts = form["prompts"]
     dialect = prompts["dialect_hint"]
     default_limit = form["limits"]["default_limit"]
     
-    system_prompt = prompts["system"].format(dialect_hint=dialect)
+    # Build system prompt with reference values if provided
+    if ref_values:
+        system_prompt = build_system_prompt_with_references(form, ref_values)
+    else:
+        system_prompt = prompts["system"].format(dialect_hint=dialect)
     
     user_prompt = prompts["user_template"].format(
         schema_text=build_schema_text(form),
@@ -372,6 +458,9 @@ def generate_sql(form: Dict[str, Any], user_request: str, use_llm: bool) -> str:
             temperature=model_cfg["temperature"]
         )
         
+        # Extract reference values for LLM context (done once at generation time)
+        ref_values = extract_reference_values(form)
+        
         # Check if two-stage optimization is enabled
         use_two_stage = form.get("optimization", {}).get("two_stage_optimizer", False)
         
@@ -381,13 +470,13 @@ def generate_sql(form: Dict[str, Any], user_request: str, use_llm: bool) -> str:
             
             # Stage 2: Generate SQL with filter hints
             if filters:
-                sys_p, usr_p = build_prompts(form, user_request)
+                sys_p, usr_p = build_prompts(form, user_request, ref_values)
                 # Enhance prompt with extracted filters
                 usr_p += f"\n\nHINT: Apply these filters early: {filters}"
                 return llm.generate_sql(sys_p, usr_p)
         
         # Standard single-stage generation
-        sys_p, usr_p = build_prompts(form, user_request)
+        sys_p, usr_p = build_prompts(form, user_request, ref_values)
         return llm.generate_sql(sys_p, usr_p)
     
     # Fallback: rule-based queries

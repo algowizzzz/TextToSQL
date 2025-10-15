@@ -145,6 +145,20 @@
     "_comment": "Two-stage: Extract filters first (cheap), then generate SQL. Reduces LLM costs 30-50% and improves query performance."
   },
   
+  "reference_values": {
+    "enabled": true,
+    "max_values_per_column": 20,
+    "_comment": "Extract unique values from these columns to provide LLM with actual data context (auto-loaded from parquet at runtime)",
+    "tables": {
+      "ccr_limits": {
+        "columns": ["customer_name", "portfolio", "booking_location", "as_of_date"]
+      },
+      "trades": {
+        "columns": ["product", "counterparty", "asset_class", "desk", "as_of_date"]
+      }
+    }
+  },
+  
   "agent": {
     "enabled": false,
     "_comment": "LangGraph multi-turn agent with self-correction (use json_sql_agent.py --agent)",

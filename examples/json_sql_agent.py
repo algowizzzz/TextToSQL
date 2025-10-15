@@ -38,6 +38,8 @@ from json_sql_copilot import (
     sanitize_sql,
     build_schema_text,
     build_vocabulary_text,
+    extract_reference_values,
+    build_system_prompt_with_references,
 )
 
 load_dotenv()
@@ -70,6 +72,9 @@ class AgentState(TypedDict):
     decision: str  # "REFINE" or "EXIT"
     feedback: Optional[str]
     
+    # Internal cache
+    _ref_values: Optional[Dict[str, Dict[str, List[str]]]]  # Reference values extracted from data
+    
     # History (for logging)
     history: Annotated[List[Dict], add]
 
@@ -92,6 +97,13 @@ def generate_sql_node(state: AgentState) -> Dict:
     schema_text = build_schema_text(form)
     vocab_text = build_vocabulary_text(form)
     
+    # Extract reference values for LLM context (done once per agent run)
+    if turn == 0:
+        ref_values = extract_reference_values(form)
+        state["_ref_values"] = ref_values  # Cache for subsequent turns
+    else:
+        ref_values = state.get("_ref_values", {})
+    
     # Get LLM
     model_cfg = form.get("model", {})
     model_name = os.getenv("OPENAI_MODEL", model_cfg.get("name", "gpt-4o-mini"))
@@ -108,13 +120,14 @@ def generate_sql_node(state: AgentState) -> Dict:
     
     # Build prompt based on turn
     if turn == 0:
-        # First attempt: use system prompt from config
-        system_prompt = form["prompts"]["system"]
+        # First attempt: use system prompt from config with reference values
+        dialect = form["prompts"]["dialect_hint"]
+        system_prompt = build_system_prompt_with_references(form, ref_values).format(dialect_hint=dialect)
         user_prompt = form["prompts"]["user_template"].format(
             schema_text=schema_text,
             vocabulary=vocab_text,
             user_request=user_request,
-            dialect_hint=form["prompts"]["dialect_hint"],
+            dialect_hint=dialect,
             default_limit=form["limits"]["default_limit"]
         )
     else:
@@ -434,6 +447,7 @@ def run_agent(form: Dict[str, Any], user_request: str) -> Dict[str, Any]:
         "error": None,
         "decision": "",
         "feedback": None,
+        "_ref_values": None,
         "history": []
     }
     
