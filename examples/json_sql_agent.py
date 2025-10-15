@@ -449,6 +449,76 @@ def run_agent(form: Dict[str, Any], user_request: str) -> Dict[str, Any]:
 
 
 # ========================================
+# Commentary generation
+# ========================================
+
+def generate_commentary_for_agent(form: Dict[str, Any], user_request: str, result: Dict[str, Any]) -> Optional[str]:
+    """Generate natural language commentary about query results using LLM."""
+    commentary_cfg = form.get("commentary", {})
+    
+    if not commentary_cfg.get("enabled", False):
+        return None
+    
+    if not os.getenv("OPENAI_API_KEY"):
+        return None
+    
+    # Prepare data preview
+    max_rows = commentary_cfg.get("max_rows_in_prompt", 20)
+    sample_rows = result["rows"][:max_rows]
+    
+    # Format data as readable text
+    data_lines = []
+    for i, row in enumerate(sample_rows, 1):
+        row_dict = dict(zip(result["columns"], row))
+        # Format row compactly
+        row_str = ", ".join([f"{k}={v}" for k, v in row_dict.items()])
+        data_lines.append(f"{i}. {row_str}")
+    
+    data_preview = "\n".join(data_lines)
+    
+    # Build prompts
+    system_prompt = commentary_cfg.get(
+        "system_prompt",
+        "You are a data analyst providing concise insights. Be specific and focus on key findings."
+    )
+    
+    user_template = commentary_cfg.get(
+        "user_template",
+        "USER QUERY: {user_request}\n\nQUERY RETURNED {row_count} rows. First {sample_size}:\n{data_preview}\n\nProvide 2-3 concise bullet points highlighting key findings."
+    )
+    
+    user_prompt = user_template.format(
+        user_request=user_request,
+        row_count=result["row_count"],
+        sample_size=len(sample_rows),
+        columns=", ".join(result["columns"]),
+        data_preview=data_preview
+    )
+    
+    # Call OpenAI
+    from openai import OpenAI
+    client = OpenAI()
+    
+    model_cfg = form.get("model", {})
+    model_name = model_cfg.get("name", "gpt-4o-mini")
+    temperature = commentary_cfg.get("temperature", 0.3)
+    
+    try:
+        rsp = client.chat.completions.create(
+            model=model_name,
+            temperature=temperature,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        return rsp.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"⚠️  Commentary generation failed: {e}")
+        return None
+
+
+# ========================================
 # CLI
 # ========================================
 
@@ -514,6 +584,16 @@ def main():
             print(f"\n💬 Feedback: {result['feedback']}")
         
         print(f"\n🔍 Agent took {result['turns_taken']} turn(s)")
+        
+        # Generate commentary if enabled and no error
+        if not result.get("error"):
+            commentary = generate_commentary_for_agent(form, args.q, result)
+            if commentary:
+                print(f"\n{'='*70}")
+                print(f"💡 COMMENTARY")
+                print(f"{'='*70}")
+                print(commentary)
+                print(f"{'='*70}")
         
     except Exception as e:
         print(f"\n❌ Error: {e}")
